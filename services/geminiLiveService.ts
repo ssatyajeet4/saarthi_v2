@@ -2,22 +2,25 @@
 import { GoogleGenAI, LiveServerMessage, Modality, Type, FunctionDeclaration } from '@google/genai';
 import { createPcmBlob, base64ToUint8Array, pcmToAudioBuffer } from './audioUtils';
 import { SYSTEM_INSTRUCTION } from '../constants';
-import { updatePointsAndMastery } from './storageService';
+import { logAssessment } from './storageService';
+import { generateAdaptiveInstructions } from './learningEngine';
 import { SubjectName } from '../types';
 
-// Tool Definition for updating progress
-const updateProgressTool: FunctionDeclaration = {
-  name: 'updateProgress',
-  description: 'Update student points and concept mastery after an answer.',
+// Enhanced Tool: assessAnswer
+const assessAnswerTool: FunctionDeclaration = {
+  name: 'assessAnswer',
+  description: 'Evaluate the student\'s answer to a question. Use this immediately after the student answers.',
   parameters: {
     type: Type.OBJECT,
     properties: {
-      subject: { type: Type.STRING, description: 'Subject name (e.g. Science, Hindi)' },
-      points: { type: Type.NUMBER, description: 'Points to award (10 for correct, 5 for retry)' },
-      conceptName: { type: Type.STRING, description: 'Name of the concept practiced' },
-      masteryIncrease: { type: Type.NUMBER, description: 'Percentage to increase mastery by (e.g. 10)' }
+      subject: { type: Type.STRING, description: 'Subject name (e.g. Science)' },
+      conceptName: { type: Type.STRING, description: 'The specific concept being tested' },
+      questionText: { type: Type.STRING, description: 'The question that was asked' },
+      isCorrect: { type: Type.BOOLEAN, description: 'True if the answer was substantially correct' },
+      hintsUsed: { type: Type.NUMBER, description: 'Estimated number of hints given (0-3)' },
+      confidence: { type: Type.NUMBER, description: 'Student confidence level inferred from voice (0.0 = unsure, 1.0 = confident)' }
     },
-    required: ['subject', 'points']
+    required: ['subject', 'conceptName', 'questionText', 'isCorrect']
   }
 };
 
@@ -55,13 +58,20 @@ export class GeminiLiveService {
   private sessionPromise: Promise<any> | null = null;
   private nextStartTime = 0;
   private cleanup: (() => void) | null = null;
+  
+  // Callbacks
   private onStatusChange: (status: string) => void;
-  private onToolCalled: () => void; // Callback to refresh UI
-  private onTranscript: (text: string) => void; // Callback for text output
+  private onToolCalled: () => void;
+  private onTranscript: (text: string) => void;
   private onVisualRequest: (prompt: string, concept: string) => void;
   private onFeedback: (type: 'correct' | 'wrong') => void;
+  
+  // State
   private currentTranscript = '';
   private currentStream: MediaStream | null = null;
+  
+  // Timing State for Metrics
+  private lastTurnEndTime: number = 0;
 
   constructor(
     apiKey: string, 
@@ -81,10 +91,11 @@ export class GeminiLiveService {
 
   async connect(initialContext?: string) {
     this.onStatusChange('Connecting...');
-    this.currentTranscript = ''; // Reset transcript on new connection
+    this.currentTranscript = ''; 
     this.onTranscript('');
+    this.lastTurnEndTime = Date.now(); // Initialize timer
     
-    // 1. Initialize AudioContexts synchronously to bind to User Gesture
+    // 1. Initialize AudioContexts synchronously
     if (!this.inputAudioContext) {
       this.inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
     }
@@ -92,7 +103,6 @@ export class GeminiLiveService {
       this.outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     }
 
-    // Resume immediately in case they are suspended (common in iOS/Safari)
     try {
         if (this.inputAudioContext.state === 'suspended') await this.inputAudioContext.resume();
         if (this.outputAudioContext.state === 'suspended') await this.outputAudioContext.resume();
@@ -100,23 +110,15 @@ export class GeminiLiveService {
         console.error("AudioContext Resume Error", e);
     }
 
-    // 2. Check for Secure Context (HTTPS or localhost)
+    // 2. Check Permissions & Devices
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         this.onStatusChange('HTTPS Required');
-        console.error("MediaDevices API unavailable. App must be served over HTTPS or localhost.");
         return;
     }
 
-    // 3. Request Mic Permission
     try {
         this.currentStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: {
-                sampleRate: 16000,
-                channelCount: 1,
-                echoCancellation: true,
-                autoGainControl: true,
-                noiseSuppression: true
-            } 
+            audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, autoGainControl: true, noiseSuppression: true } 
         });
     } catch (e: any) {
         console.error("Mic Permission Denied", e);
@@ -131,8 +133,11 @@ export class GeminiLiveService {
     // Config setup
     let finalSystemInstruction = SYSTEM_INSTRUCTION;
     if (initialContext) {
-      finalSystemInstruction += `\n\nCURRENT SESSION CONTEXT (FROM UPLOADED CONTENT): ${initialContext}`;
+      finalSystemInstruction += `\n\nCURRENT SESSION CONTEXT (FROM UPLOADED CONTENT):\n${initialContext}`;
     }
+    
+    // Add specific instruction for using the new tool
+    finalSystemInstruction += `\n\nIMPORTANT: Every time the student answers a question, you MUST call the 'assessAnswer' tool immediately to record their performance. Infer their confidence from their tone.`;
 
     const config = {
       model: 'gemini-2.5-flash-native-audio-preview-12-2025',
@@ -147,16 +152,15 @@ export class GeminiLiveService {
       },
       config: {
         responseModalities: [Modality.AUDIO],
-        outputAudioTranscription: {}, // Enable text transcription of the AI response
+        outputAudioTranscription: {}, 
         systemInstruction: finalSystemInstruction,
-        tools: [{ functionDeclarations: [updateProgressTool, createVisualTool, provideTranslationTool] }],
+        tools: [{ functionDeclarations: [assessAnswerTool, createVisualTool, provideTranslationTool] }],
         speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
         },
       },
     };
 
-    // Connect
     try {
         this.sessionPromise = this.ai.live.connect(config);
     } catch (e) {
@@ -167,8 +171,8 @@ export class GeminiLiveService {
 
   private async handleOpen() {
     this.onStatusChange('Active');
+    this.lastTurnEndTime = Date.now(); // Reset timer on start
     
-    // Start Mic Stream using the pre-acquired stream
     if (!this.inputAudioContext || !this.currentStream) return;
     
     try {
@@ -209,6 +213,14 @@ export class GeminiLiveService {
         const source = this.outputAudioContext.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(this.outputAudioContext.destination);
+        
+        // Track when this audio chunk finishes playing
+        source.onended = () => {
+             // We update the timer when the AI finishes speaking.
+             // This is the "Start Time" for the user's next turn/thinking.
+             this.lastTurnEndTime = Date.now(); 
+        };
+        
         source.start(this.nextStartTime);
         this.nextStartTime += audioBuffer.duration;
     }
@@ -218,9 +230,8 @@ export class GeminiLiveService {
         if (this.currentTranscript.endsWith("Kannada: ")) {
              // Already prepared
         } else if (this.currentTranscript.length > 0 && !this.currentTranscript.endsWith('\n')) {
-            // this.currentTranscript += ' '; // Optional spacing
+            // this.currentTranscript += ' '; 
         }
-        
         this.currentTranscript += message.serverContent.outputTranscription.text;
         this.onTranscript(this.currentTranscript);
     }
@@ -230,19 +241,39 @@ export class GeminiLiveService {
         for (const fc of message.toolCall.functionCalls) {
             let result = 'Success';
             
-            if (fc.name === 'updateProgress') {
-                const { subject, points, conceptName, masteryIncrease } = fc.args as any;
-                updatePointsAndMastery(subject as SubjectName, points, conceptName, masteryIncrease);
-                this.onToolCalled();
+            if (fc.name === 'assessAnswer') {
+                const { subject, conceptName, questionText, isCorrect, hintsUsed, confidence } = fc.args as any;
                 
-                // Trigger Feedback Animation
-                if (points >= 10) {
+                // --- METRIC CALCULATION ---
+                // Calculate time taken since the AI finished speaking last.
+                // We cap it at 60s to avoid skewed data if there was a pause.
+                const rawTimeTaken = (Date.now() - this.lastTurnEndTime) / 1000;
+                const timeTaken = Math.min(60, Math.max(1, rawTimeTaken));
+                
+                // Log detailed assessment
+                const logResult = logAssessment(
+                    subject, 
+                    conceptName, 
+                    questionText, 
+                    isCorrect, 
+                    timeTaken, 
+                    hintsUsed || 0, 
+                    confidence || 0.8
+                );
+                
+                this.onToolCalled();
+
+                // Generate Adaptive Instruction based on new mastery
+                const adaptation = generateAdaptiveInstructions(logResult.mastery.score);
+                
+                result = `Assessment Logged. Time: ${timeTaken.toFixed(1)}s. Mastery: ${(logResult.mastery.score * 100).toFixed(0)}%. \nINSTRUCTION: ${adaptation}`;
+                
+                // Feedback
+                if (isCorrect) {
                     this.onFeedback('correct');
                 } else {
                     this.onFeedback('wrong');
                 }
-                
-                result = 'Progress updated successfully';
             } 
             else if (fc.name === 'createVisual') {
                 const { prompt, concept } = fc.args as any;
@@ -251,8 +282,7 @@ export class GeminiLiveService {
             }
             else if (fc.name === 'provideTranslation') {
                 const { englishText } = fc.args as any;
-                const separator = this.currentTranscript.length > 0 ? '\n\n' : '';
-                this.currentTranscript += `${separator}English: ${englishText}\nKannada: `;
+                this.currentTranscript += `\nEnglish: ${englishText}\nKannada: `;
                 this.onTranscript(this.currentTranscript);
                 result = 'Translation displayed';
             }
@@ -272,34 +302,18 @@ export class GeminiLiveService {
     // 4. Handle Interruption
     if (message.serverContent?.interrupted) {
         this.nextStartTime = this.outputAudioContext?.currentTime || 0;
+        this.lastTurnEndTime = Date.now(); // Reset timer on interruption
     }
   }
 
   async disconnect() {
     if (this.cleanup) this.cleanup();
     
-    // DO NOT CLOSE AudioContexts here if we want to reuse them or if closing them causes issues on re-connect.
-    // However, clean closing is good practice. 
-    // To be safe for re-connections: check state.
-    
     if (this.inputAudioContext && this.inputAudioContext.state !== 'closed') {
-        try {
-             // Just suspend instead of close to keep the context valid? 
-             // No, standard practice is close. We re-create in connect().
-            await this.inputAudioContext.close();
-            this.inputAudioContext = null;
-        } catch (e) {
-            console.error("Error closing input context:", e);
-        }
+        try { await this.inputAudioContext.close(); this.inputAudioContext = null; } catch (e) {}
     }
-    
     if (this.outputAudioContext && this.outputAudioContext.state !== 'closed') {
-        try {
-            await this.outputAudioContext.close();
-            this.outputAudioContext = null;
-        } catch (e) {
-             console.error("Error closing output context:", e);
-        }
+        try { await this.outputAudioContext.close(); this.outputAudioContext = null; } catch (e) {}
     }
   }
 }

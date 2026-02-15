@@ -2,8 +2,9 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { getProfile } from '../services/storageService';
 import { StudentProfile, Chapter, ConceptMastery } from '../types';
+import { getXpForNextLevel, getLevelProgress } from '../services/gamificationService';
 import { ParentContext } from './Layout';
-import { Trophy, Flame, Star, ChevronRight, PlayCircle, Clock, Brain, Map, Upload, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Trophy, Flame, Star, PlayCircle, Clock, Upload, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // Simple Circular Progress Component
@@ -49,7 +50,6 @@ const Dashboard: React.FC = () => {
 
   // Collect all uploaded chapters across subjects
   const allChapters = (Object.values(profile.chapters || {}) as Chapter[]).sort((a, b) => {
-     // Sort by creation or last studied
      return (b.createdAt || '').localeCompare(a.createdAt || '');
   });
 
@@ -59,8 +59,10 @@ const Dashboard: React.FC = () => {
   
   const estimatedHours = (masteredConcepts * 0.25).toFixed(1);
   
-  // Calculate Level based on new XP model
+  // XP Logic
   const currentLevel = profile.gamification.level;
+  const nextLevelXp = getXpForNextLevel(currentLevel);
+  const levelProgress = getLevelProgress(profile.gamification.xp, currentLevel);
 
   // --- Week Calendar Logic ---
   const getWeekDays = () => {
@@ -118,14 +120,25 @@ const Dashboard: React.FC = () => {
       
       {/* 1. Welcome Card */}
       <div className="soft-card p-6 flex items-center justify-between bg-gradient-to-br from-indigo-500 to-violet-600 text-white relative overflow-hidden">
-        <div className="relative z-10">
+        <div className="relative z-10 w-full">
           <p className="text-indigo-100 font-medium text-sm mb-1">Good Morning,</p>
-          <h2 className="text-3xl font-black fun-font tracking-tight">{profile.name}</h2>
-          <p className="text-xs font-bold bg-white/20 inline-block px-3 py-1 rounded-full mt-3 backdrop-blur-sm">
-            Level {currentLevel} Scholar
-          </p>
+          <h2 className="text-3xl font-black fun-font tracking-tight mb-3">{profile.name}</h2>
+          
+          <div className="flex items-center gap-2 mb-1">
+             <div className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold backdrop-blur-sm border border-white/10">
+                Lvl {currentLevel}
+             </div>
+             <span className="text-xs text-indigo-200 font-bold">{profile.gamification.xp} XP</span>
+          </div>
+
+          {/* Level Progress Bar */}
+          <div className="w-full h-1.5 bg-black/20 rounded-full overflow-hidden mt-1">
+             <div className="h-full bg-yellow-400 rounded-full transition-all duration-1000" style={{ width: `${levelProgress}%` }}></div>
+          </div>
+          <p className="text-[10px] text-indigo-200 mt-1 text-right">{Math.round(levelProgress)}% to next level</p>
+
         </div>
-        <div className="absolute right-0 top-0 opacity-10">
+        <div className="absolute right-0 top-0 opacity-10 pointer-events-none">
            <Trophy className="w-32 h-32 transform rotate-12 translate-x-8 -translate-y-4" />
         </div>
       </div>
@@ -172,15 +185,15 @@ const Dashboard: React.FC = () => {
                    </div>
               </div>
 
-              {/* Total XP */}
-              <div className="h-14 soft-card px-4 flex items-center justify-between bg-yellow-50 border-yellow-100">
+              {/* Coins Wallet */}
+              <div className="h-14 soft-card px-4 flex items-center justify-between bg-yellow-50 border-yellow-100 cursor-pointer" onClick={() => navigate('/progress')}>
                  <div className="flex items-center gap-2">
                      <div className="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center">
                         <Star className="w-4 h-4 text-yellow-600 fill-current" />
                      </div>
-                     <span className="font-bold text-slate-700 text-sm">Total XP</span>
+                     <span className="font-bold text-slate-700 text-sm">Coins</span>
                  </div>
-                 <span className="text-xl font-black text-slate-800">{profile.gamification.xp}</span>
+                 <span className="text-xl font-black text-slate-800">{profile.gamification.coins}</span>
               </div>
           </div>
       </div>
@@ -230,17 +243,6 @@ const Dashboard: React.FC = () => {
             </div>
         )}
       </div>
-
-      {/* 4. Gamification Banner */}
-      {profile.gamification.badges.length > 0 && (
-          <div className="soft-card p-5 bg-gradient-to-r from-yellow-400 to-orange-500 text-white flex items-center justify-between">
-             <div>
-                <h4 className="font-bold text-lg fun-font">Latest Badge</h4>
-                <p className="text-xs font-medium text-yellow-50 opacity-90">{profile.gamification.badges[profile.gamification.badges.length-1]}</p>
-             </div>
-             <Trophy className="w-10 h-10 text-white fill-current animate-bounce" />
-          </div>
-      )}
 
     </div>
   );

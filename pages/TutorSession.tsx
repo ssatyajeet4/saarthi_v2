@@ -1,8 +1,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GeminiLiveService } from '../services/geminiLiveService';
-import { saveUploadedChapter, saveStoredImage } from '../services/storageService';
+import { saveUploadedChapter, saveStoredImage, getProfile } from '../services/storageService';
 import { generateKnowledgeGraph } from '../services/contentPipeline';
+import { generateAdaptiveInstructions } from '../services/learningEngine';
 import AudioVisualizer from '../components/AudioVisualizer';
 import { GoogleGenAI } from '@google/genai';
 import { Upload, Mic, MicOff, X, Sparkles, Loader2, Camera, HelpCircle, RefreshCcw, BookOpen, GraduationCap, Eye, AlertTriangle, Network, ListChecks, Brain, Trophy, Settings, Star } from 'lucide-react';
@@ -41,10 +42,39 @@ const TutorSession: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
 
-  // Helper to format context based on Mode
-  const buildContextString = (subject: string, name: string, notes: string, questions: Question[], activeMode: 'learn' | 'quiz') => {
+  // Helper to format context based on Mode and Mastery
+  const buildContextString = (
+      subject: string, 
+      name: string, 
+      notes: string, 
+      questions: Question[], 
+      graph: KnowledgeGraph | undefined,
+      activeMode: 'learn' | 'quiz'
+  ) => {
+      // 1. Calculate Average Mastery for this Content
+      const profile = getProfile();
+      let totalScore = 0;
+      let count = 0;
+      
+      if (graph && graph.nodes) {
+          Object.keys(graph.nodes).forEach(nodeId => {
+              const m = profile.masteryMap[nodeId];
+              if (m) {
+                  totalScore += m.score;
+                  count++;
+              }
+          });
+      }
+      // If no specific nodes, we default to 0 (Novice)
+      const avgMastery = count > 0 ? totalScore / count : 0;
+      const adaptiveInstruction = generateAdaptiveInstructions(avgMastery);
+
+      // 2. Build Context
       let context = `Subject: ${subject}.\nChapter: ${name}.\n`;
-      context += `CURRENT OPERATING MODE: ${activeMode === 'quiz' ? 'QUIZ MODE' : 'LEARN MODE'}.\n\n`;
+      context += `CURRENT OPERATING MODE: ${activeMode === 'quiz' ? 'QUIZ MODE' : 'LEARN MODE'}.\n`;
+      
+      // Inject Dynamic Adaptation
+      context += `\n${adaptiveInstruction}\n\n`;
       
       if (activeMode === 'quiz') {
           context += `INSTRUCTION: You are in QUIZ MODE. Do not lecture. Ask questions from the [QUESTION BANK] below randomly. Keep it fast. If no questions are provided, generate your own based on the subject.\n\n`;
@@ -70,7 +100,7 @@ const TutorSession: React.FC = () => {
       const { subject, chapter } = location.state;
       const notes = chapter.rawContent || chapter.summary || 'No notes available.';
       
-      const fullContext = buildContextString(subject, chapter.name, notes, chapter.questions || [], mode);
+      const fullContext = buildContextString(subject, chapter.name, notes, chapter.questions || [], chapter.graph, mode);
 
       setExtractedContext(fullContext);
       setActiveSource({
@@ -83,7 +113,7 @@ const TutorSession: React.FC = () => {
       });
     } else {
        // Initialize General Context if no active source
-       const generalContext = buildContextString("General Knowledge", "General Session", "General discussion.", [], mode);
+       const generalContext = buildContextString("General Knowledge", "General Session", "General discussion.", [], undefined, mode);
        setExtractedContext(generalContext);
     }
   }, [location.state]);
@@ -128,8 +158,9 @@ const TutorSession: React.FC = () => {
     const currentChapter = activeSource?.title || "General Session";
     const currentNotes = activeSource?.rawContent || "No specific study notes provided.";
     const currentQuestions = activeSource?.questions || [];
+    const currentGraph = activeSource?.graph;
 
-    const newContext = buildContextString(currentSubject, currentChapter, currentNotes, currentQuestions, newMode);
+    const newContext = buildContextString(currentSubject, currentChapter, currentNotes, currentQuestions, currentGraph, newMode);
     setExtractedContext(newContext);
 
     // If session is active, we must reconnect to apply the new System Instruction
@@ -221,7 +252,7 @@ const TutorSession: React.FC = () => {
                 result.questions
             );
             
-            const fullContext = buildContextString(result.subject, result.name, result.rawContent || '', result.questions || [], mode);
+            const fullContext = buildContextString(result.subject, result.name, result.rawContent || '', result.questions || [], result.graph, mode);
             setExtractedContext(fullContext);
             
             setActiveSource({

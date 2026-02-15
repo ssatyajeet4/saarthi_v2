@@ -1,6 +1,7 @@
+
 {
-  "name": "Shiksha Coach AI",
-  "short_name": "Shiksha",
+  "name": "Saarthi AI",
+  "short_name": "Saarthi",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f8fafc",
@@ -8,13 +9,13 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "https://api.dicebear.com/7.x/fun-emoji/svg?seed=SaarthiIcon",
+      "src": "https://api.dicebear.com/7.x/fun-emoji/svg?seed=SaarthiMain",
       "sizes": "192x192",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     },
     {
-      "src": "https://api.dicebear.com/7.x/fun-emoji/svg?seed=SaarthiIcon",
+      "src": "https://api.dicebear.com/7.x/fun-emoji/svg?seed=SaarthiMain",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"

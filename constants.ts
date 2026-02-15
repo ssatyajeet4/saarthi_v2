@@ -1,6 +1,5 @@
 
-
-import { SubjectName } from './types';
+import { SubjectName, BadgeDefinition, ShopItem } from './types';
 
 export const SUPPORTED_SUBJECTS: SubjectName[] = [
   'Hindi',
@@ -43,8 +42,8 @@ The user will define the active mode. You must adapt immediately.
   2. **RANDOMIZE** the order completely. Never follow the list sequence.
   3. Wait for the answer.
   4. **Evaluate immediately**:
-     - Correct: "Correct! +10 Points." -> Call \`updateProgress\` -> Ask Next Question.
-     - Wrong: "Not quite. The answer is [Short Answer]." -> Call \`updateProgress\` (0 pts) -> Ask Next Question.
+     - Correct: "Correct! +10 Points." -> Call \`assessAnswer\` -> Ask Next Question.
+     - Wrong: "Not quite. The answer is [Short Answer]." -> Call \`assessAnswer\` (0 pts) -> Ask Next Question.
   5. **Do NOT explain** unless the student explicitly asks "Why?". Keep the pace fast.
 
 ## 🔷 INPUT HANDLING
@@ -80,7 +79,7 @@ If a concept is complex (e.g., Photosynthesis, Solar System, Water Cycle), you c
 Call the 'createVisual' tool with a descriptive prompt to show an image to the student.
 
 ## 🔷 GAMIFICATION SYSTEM
-Call the 'updateProgress' tool to award points.
+Call the 'assessAnswer' tool to award points.
 Correct Answer: +10 pts
 Retry Success: +5 pts
 Perfect Session: +25 pts
@@ -88,3 +87,91 @@ Perfect Session: +25 pts
 ## 🔷 DIFFICULTY ADJUSTMENT
 Based on mastery: <40% Simplify, 40–70% Normal, 70–85% Moderate, >85% Advanced.
 `;
+
+// --- GAMIFICATION CONTENT ---
+
+export const BADGE_DEFINITIONS: BadgeDefinition[] = [
+    { 
+        id: 'first_steps', 
+        name: 'First Steps', 
+        description: 'Complete your very first quiz question.', 
+        icon: 'Footprints', 
+        xpReward: 50 
+    },
+    { 
+        id: 'high_five', 
+        name: 'High Five', 
+        description: 'Get 5 correct answers in total.', 
+        icon: 'Hand', 
+        xpReward: 100 
+    },
+    { 
+        id: 'streak_3', 
+        name: 'On Fire', 
+        description: 'Reach a 3-day learning streak.', 
+        icon: 'Flame', 
+        xpReward: 150 
+    },
+    { 
+        id: 'night_owl', 
+        name: 'Night Owl', 
+        description: 'Complete a study session after 8 PM.', 
+        icon: 'Moon', 
+        xpReward: 75 
+    },
+    { 
+        id: 'early_bird', 
+        name: 'Early Bird', 
+        description: 'Complete a study session before 8 AM.', 
+        icon: 'Sun', 
+        xpReward: 75 
+    },
+    { 
+        id: 'scholar', 
+        name: 'Scholar', 
+        description: 'Achieve "Mastered" status in any concept.', 
+        icon: 'GraduationCap', 
+        xpReward: 200 
+    },
+    { 
+        id: 'sharp_shooter', 
+        name: 'Sharp Shooter', 
+        description: 'Answer 3 questions correctly in a row.', 
+        icon: 'Target', 
+        xpReward: 100 
+    },
+    {
+        id: 'visual_learner',
+        name: 'Visual Learner',
+        description: 'Generate 5 AI visual aids.',
+        icon: 'Eye',
+        xpReward: 50
+    }
+];
+
+export const SHOP_ITEMS: ShopItem[] = [
+    {
+        id: 'freeze_pack_1',
+        name: 'Streak Freeze',
+        description: 'Protect your streak for one missed day. Max 3.',
+        cost: 50,
+        icon: 'Snowflake',
+        type: 'streak_freeze'
+    },
+    {
+        id: 'theme_dark',
+        name: 'Midnight Theme',
+        description: 'Unlock the Midnight UI theme (Coming Soon).',
+        cost: 200,
+        icon: 'Moon',
+        type: 'theme'
+    },
+    {
+        id: 'avatar_robot',
+        name: 'Mecha Avatar',
+        description: 'Unlock the Robot avatar for your profile.',
+        cost: 150,
+        icon: 'Bot',
+        type: 'avatar'
+    }
+];

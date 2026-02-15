@@ -1,5 +1,4 @@
 
-
 export type SubjectName = 'Hindi' | 'SST' | 'Science' | 'Computer Science' | 'Kannada';
 
 export type DifficultyTier = 1 | 2 | 3 | 4 | 5; // 1=Basic, 5=Olympiad
@@ -31,15 +30,20 @@ export interface ConceptMastery {
   score: number; // 0.0 to 1.0
   state: MasteryState;
   lastStudiedAt: string; // ISO Date
-  attempts: AttemptRecord[];
+  attempts: AttemptRecord[]; // Last 5 attempts
   decayFactor: number; // For spaced repetition
 }
 
+// Detailed Assessment Record
 export interface AttemptRecord {
-  date: string;
+  id: string;
+  timestamp: string;
+  conceptId: string;
+  questionText: string;
   isCorrect: boolean;
   timeTaken: number; // seconds
-  hintsUsed: number;
+  hintsUsed: number; // 0 to 3
+  confidence: number; // 0.0 to 1.0 (AI inferred)
 }
 
 export interface KnowledgeGraph {
@@ -48,6 +52,23 @@ export interface KnowledgeGraph {
 }
 
 // PHASE 2: GAMIFICATION MODELS
+
+export interface BadgeDefinition {
+  id: string;
+  name: string;
+  description: string;
+  icon: string; // Lucide icon name
+  xpReward: number;
+}
+
+export interface ShopItem {
+  id: string;
+  name: string;
+  description: string;
+  cost: number;
+  icon: string;
+  type: 'streak_freeze' | 'theme' | 'avatar';
+}
 
 export interface UserGamification {
   xp: number;
@@ -61,6 +82,7 @@ export interface UserGamification {
   };
   badges: string[]; // Badge IDs
   unlockedNodes: string[]; // Concept IDs unlocked in Skill Tree
+  inventory: string[]; // IDs of items owned (themes, avatars)
 }
 
 // DATA PERSISTENCE MODELS
@@ -83,6 +105,7 @@ export interface StudentProfile {
   // Learning State
   masteryMap: Record<string, ConceptMastery>; // Key: ConceptID
   chapters: Record<string, Chapter>;
+  assessmentHistory: AttemptRecord[]; // Full history of questions answered
   
   // Gamification State
   gamification: UserGamification;
