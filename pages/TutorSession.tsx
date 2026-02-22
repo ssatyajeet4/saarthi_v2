@@ -6,8 +6,8 @@ import { generateKnowledgeGraph } from '../services/contentPipeline';
 import { generateAdaptiveInstructions } from '../services/learningEngine';
 import AudioVisualizer from '../components/AudioVisualizer';
 import { GoogleGenAI } from '@google/genai';
-import { Upload, Mic, MicOff, X, Sparkles, Loader2, Camera, HelpCircle, RefreshCcw, BookOpen, GraduationCap, Eye, AlertTriangle, Network, ListChecks, Brain, Trophy, Settings, Star } from 'lucide-react';
-import { GeneratedImage, SubjectName, KnowledgeGraph, Question } from '../types';
+import { Mic, MicOff, X, Sparkles, Loader2, Camera, HelpCircle, RefreshCcw, BookOpen, GraduationCap, Eye, AlertTriangle, Network, ListChecks, Brain, Trophy, Star } from 'lucide-react';
+import { GeneratedImage, KnowledgeGraph, Question } from '../types';
 import { useLocation } from 'react-router-dom';
 
 const TutorSession: React.FC = () => {
@@ -208,7 +208,7 @@ const TutorSession: React.FC = () => {
         let base64 = '';
         if (response.candidates?.[0]?.content?.parts) {
             for (const part of response.candidates[0].content.parts) {
-                if (part.inlineData) { base64 = part.inlineData.data; break; }
+                if (part.inlineData && part.inlineData.data) { base64 = part.inlineData.data; break; }
             }
         }
 
@@ -224,6 +224,32 @@ const TutorSession: React.FC = () => {
     finally { setGeneratingVisual(false); }
   };
 
+  // Loading Messages for Engagement
+  const LOADING_MESSAGES = [
+    "Reading document...",
+    "Analyzing content structure...",
+    "Identifying key concepts...",
+    "Separating study notes...",
+    "Generating quiz questions...",
+    "Building knowledge graph...",
+    "Finalizing your lesson plan..."
+  ];
+
+  // Cycle through loading messages
+  useEffect(() => {
+    if (!analyzingContent) return;
+    
+    let msgIndex = 0;
+    setTranscript(LOADING_MESSAGES[0]);
+    
+    const interval = setInterval(() => {
+      msgIndex = (msgIndex + 1) % LOADING_MESSAGES.length;
+      setTranscript(LOADING_MESSAGES[msgIndex]);
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [analyzingContent]);
+
   // --- Content Pipeline Handler ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -231,7 +257,7 @@ const TutorSession: React.FC = () => {
 
     setActiveSource(null);
     setAnalyzingContent(true);
-    setTranscript("Analyzing document... separating notes and questions...");
+    // Transcript is now handled by the useEffect above
     
     const reader = new FileReader();
     reader.onloadend = async () => {

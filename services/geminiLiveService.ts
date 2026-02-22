@@ -237,7 +237,7 @@ export class GeminiLiveService {
     }
 
     // 3. Handle Tool Calls
-    if (message.toolCall) {
+    if (message.toolCall && message.toolCall.functionCalls) {
         for (const fc of message.toolCall.functionCalls) {
             let result = 'Success';
             
