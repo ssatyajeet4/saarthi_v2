@@ -6,7 +6,7 @@ import { generateKnowledgeGraph } from '../services/contentPipeline';
 import { generateAdaptiveInstructions } from '../services/learningEngine';
 import AudioVisualizer from '../components/AudioVisualizer';
 import { GoogleGenAI } from '@google/genai';
-import { Mic, MicOff, X, Sparkles, Loader2, Camera, HelpCircle, RefreshCcw, BookOpen, GraduationCap, Eye, AlertTriangle, Network, ListChecks, Brain, Trophy, Star } from 'lucide-react';
+import { Mic, MicOff, X, Sparkles, Loader2, Camera, HelpCircle, RefreshCcw, BookOpen, GraduationCap, Eye, AlertTriangle, Network, ListChecks, Brain, Trophy, Star, FileText } from 'lucide-react';
 import { GeneratedImage, KnowledgeGraph, Question } from '../types';
 import { useLocation } from 'react-router-dom';
 
@@ -30,6 +30,8 @@ const TutorSession: React.FC = () => {
   const [analyzingContent, setAnalyzingContent] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [showContentModal, setShowContentModal] = useState(false);
+  const [showTextModal, setShowTextModal] = useState(false);
+  const [textInput, setTextInput] = useState('');
 
   // Generated Visual State
   const [generatedVisual, setGeneratedVisual] = useState<GeneratedImage | null>(null);
@@ -304,6 +306,56 @@ const TutorSession: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
+  const handleTextSubmit = async () => {
+    if (!textInput.trim()) return;
+    
+    setShowTextModal(false);
+    setActiveSource(null);
+    setAnalyzingContent(true);
+    // Transcript handled by useEffect
+    
+    try {
+        // Base64 encode the text
+        const base64String = btoa(unescape(encodeURIComponent(textInput)));
+        
+        const result = await generateKnowledgeGraph(apiKey, base64String, 'text/plain');
+        
+        if (result.subject && result.name) {
+            saveUploadedChapter(
+                result.subject, 
+                result.name, 
+                "Imported Text", 
+                result.rawContent || "No text available", 
+                "Medium",
+                result.graph,
+                result.questions
+            );
+            
+            const fullContext = buildContextString(result.subject, result.name, result.rawContent || '', result.questions || [], result.graph, mode);
+            setExtractedContext(fullContext);
+            
+            setActiveSource({
+              title: result.name,
+              subtitle: result.subject,
+              type: 'upload',
+              rawContent: result.rawContent,
+              questions: result.questions,
+              graph: result.graph
+            });
+            setTranscript(`Analysis Complete! Found ${result.questions?.length || 0} questions and notes. Tap mic to start.`);
+        } else {
+             setExtractedContext("Analysis unclear.");
+             setActiveSource({ title: "General Discussion", subtitle: "General", type: 'upload' });
+        }
+    } catch (err) {
+        console.error(err);
+        setExtractedContext("Error processing text.");
+    } finally {
+        setAnalyzingContent(false);
+        setTextInput('');
+    }
+  };
+
   const toggleSession = async () => {
     if (isSessionActive) {
       await liveServiceRef.current?.disconnect();
@@ -511,6 +563,37 @@ const TutorSession: React.FC = () => {
         </div>
       )}
 
+      {/* Text Input Modal */}
+      {showTextModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
+                <div className="p-5 border-b flex justify-between items-center bg-slate-50">
+                    <h3 className="font-bold text-lg text-slate-800">Paste Study Material</h3>
+                    <button onClick={() => setShowTextModal(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                        <X className="w-5 h-5 text-slate-500" />
+                    </button>
+                </div>
+                <div className="p-5">
+                    <textarea 
+                        className="w-full h-64 p-4 border border-slate-200 rounded-xl resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm leading-relaxed"
+                        placeholder="Paste your chapter text, notes, or questions here..."
+                        value={textInput}
+                        onChange={(e) => setTextInput(e.target.value)}
+                    ></textarea>
+                    <div className="flex justify-end mt-4">
+                        <button 
+                            onClick={handleTextSubmit}
+                            disabled={!textInput.trim()}
+                            className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Analyze Content
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* Controls Area */}
       <div className="w-full bg-white rounded-t-[2.5rem] shadow-[0_-10px_60px_-15px_rgba(0,0,0,0.05)] p-8 pb-10 z-20 mt-auto">
           <div className="flex justify-center gap-6 mb-8">
@@ -521,6 +604,12 @@ const TutorSession: React.FC = () => {
                <button disabled={!isSessionActive} className="flex flex-col items-center gap-2 text-slate-400 disabled:opacity-30 active:scale-95 transition-transform">
                    <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center hover:bg-slate-100 transition-colors"><RefreshCcw className="w-6 h-6" /></div>
                    <span className="text-[10px] font-bold">Explain</span>
+               </button>
+               <button onClick={() => setShowTextModal(true)} className="flex flex-col items-center gap-2 text-slate-400 cursor-pointer group active:scale-95 transition-transform">
+                   <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center border border-transparent group-hover:bg-indigo-50 group-hover:border-indigo-100 group-hover:text-indigo-600 transition-all">
+                       <FileText className="w-6 h-6" />
+                   </div>
+                   <span className="text-[10px] font-bold">Paste Text</span>
                </button>
                <label className="flex flex-col items-center gap-2 text-slate-400 cursor-pointer group active:scale-95 transition-transform">
                    <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center border border-transparent group-hover:bg-indigo-50 group-hover:border-indigo-100 group-hover:text-indigo-600 transition-all">
